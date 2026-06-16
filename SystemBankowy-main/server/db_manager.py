@@ -6,20 +6,16 @@ from datetime import datetime
 class DBManager:
     def __init__(self, db_name="bank.db"):
         self.db_name = db_name
-        # Mutex do synchronizacji operacji na saldzie 
         self.lock = threading.Lock()
         self.init_db()
 
     def get_connection(self):
-        # check_same_thread=False pozwala na dostęp do DB z różnych wątków klientów
         return sqlite3.connect(self.db_name, check_same_thread=False)
 
     def init_db(self):
-        with self.lock: # Zabezpieczamy przed jednoczesnym tworzeniem
+        with self.lock:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
-            # Tabela użytkowników
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,15 +23,13 @@ class DBManager:
                     nazwisko TEXT,
                     pesel TEXT UNIQUE,
                     login TEXT UNIQUE,
-                    haslo TEXT, -- Zapisujemy tylko hash!
+                    haslo TEXT,
                     nr_konta TEXT UNIQUE,
                     saldo REAL DEFAULT 0.0,
                     is_active INTEGER DEFAULT 1,
                     is_admin INTEGER DEFAULT 0
                 )
             ''')
-            
-            # Tabela historii operacji
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +44,6 @@ class DBManager:
             conn.close()
 
     def _hash_pw(self, password):
-        # Proste hashowanie SHA-256
         return hashlib.sha256(password.encode()).hexdigest()
 
     def add_user(self, imie, nazwisko, pesel, login, haslo, nr_konta, is_admin=0):
@@ -66,7 +59,6 @@ class DBManager:
                 conn.commit()
                 return True, "Klient dodany pomyślnie."
             except sqlite3.IntegrityError:
-                # Wyłapujemy błąd, jeśli PESEL, login albo nr konta już są w bazie
                 return False, "Błąd: Dane (PESEL/Login/Nr konta) nie są unikalne."
             finally:
                 conn.close()
@@ -75,12 +67,9 @@ class DBManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         hashed = self._hash_pw(haslo)
-        
-        # Sprawdzamy czy login, hash się zgadzają i czy konto nie jest zablokowane
         cursor.execute("SELECT nr_konta, is_admin FROM users WHERE login=? AND haslo=? AND is_active=1", (login, hashed))
         user = cursor.fetchone()
         conn.close()
-        
         if user:
             return True, {"nr_konta": user[0], "is_admin": user[1]}
         return False, "Błędne dane logowania lub konto zablokowane."
@@ -94,27 +83,19 @@ class DBManager:
         return res[0] if res else 0.0
 
     def update_balance(self, nr_konta, kwota, typ_operacji):
-        # Sekcja krytyczna - blokujemy, żeby dwa wątki nie zmieniły salda naraz
         with self.lock:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
             cursor.execute("SELECT saldo FROM users WHERE nr_konta=? AND is_active=1", (nr_konta,))
             row = cursor.fetchone()
-            
             if not row:
                 conn.close()
                 return False, "Konto nie istnieje lub jest nieaktywne."
-                
             nowe_saldo = row[0] + kwota
             if nowe_saldo < 0:
                 conn.close()
                 return False, "Brak wystarczających środków na koncie."
-                
-            # Aktualizacja salda
             cursor.execute("UPDATE users SET saldo=? WHERE nr_konta=?", (nowe_saldo, nr_konta))
-            
-            # Zapis do logów operacji
             data_teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute("INSERT INTO history (nr_konta, typ_operacji, kwota, saldo_po, data) VALUES (?, ?, ?, ?, ?)",
                            (nr_konta, typ_operacji, kwota, nowe_saldo, data_teraz))
@@ -125,43 +106,31 @@ class DBManager:
     def transfer(self, od_konta, do_konta, kwota):
         if kwota <= 0:
             return False, "Kwota przelewu musi być większa niż 0."
-            
-        with self.lock: # Synchronizacja przy przelewach jest kluczowa
+        with self.lock:
             conn = self.get_connection()
             cursor = conn.cursor()
             try:
-                # Sprawdzamy odbiorcę
                 cursor.execute("SELECT id FROM users WHERE nr_konta=? AND is_active=1", (do_konta,))
                 if not cursor.fetchone():
                     return False, "Konto docelowe nie istnieje."
-                
-                # Sprawdzamy nadawcę
                 cursor.execute("SELECT saldo FROM users WHERE nr_konta=?", (od_konta,))
                 saldo_od = cursor.fetchone()[0]
-                
                 if saldo_od < kwota:
                     return False, "Brak środków na przelew."
-                
-                # Odejmujemy nadawcy
                 nowe_saldo_od = saldo_od - kwota
                 cursor.execute("UPDATE users SET saldo=? WHERE nr_konta=?", (nowe_saldo_od, od_konta))
-                
-                # Dodajemy odbiorcy
                 cursor.execute("SELECT saldo FROM users WHERE nr_konta=?", (do_konta,))
                 nowe_saldo_do = cursor.fetchone()[0] + kwota
                 cursor.execute("UPDATE users SET saldo=? WHERE nr_konta=?", (nowe_saldo_do, do_konta))
-                
-                # Logowanie historii dla obu stron
                 data_teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 cursor.execute("INSERT INTO history (nr_konta, typ_operacji, kwota, saldo_po, data) VALUES (?, ?, ?, ?, ?)",
-                               (od_konta, f"PRZELEW WYCHODZĄCY DO {do_konta}", -kwota, nowe_saldo_od, data_teraz))
+                               (od_konta, f"PRZELEW DO {do_konta}", -kwota, nowe_saldo_od, data_teraz))
                 cursor.execute("INSERT INTO history (nr_konta, typ_operacji, kwota, saldo_po, data) VALUES (?, ?, ?, ?, ?)",
-                               (do_konta, f"PRZELEW PRZYCHODZĄCY OD {od_konta}", kwota, nowe_saldo_do, data_teraz))
-                
-                conn.commit() # Zatwierdzamy całą transakcję
+                               (do_konta, f"PRZELEW OD {od_konta}", kwota, nowe_saldo_do, data_teraz))
+                conn.commit()
                 return True, "Przelew zrealizowany pomyślnie."
             except Exception as e:
-                conn.rollback() # W razie błędu cofamy wszystko, żeby nikt nie stracił kasy
+                conn.rollback()
                 return False, f"Błąd serwera przy przelewie: {str(e)}"
             finally:
                 conn.close()
@@ -173,3 +142,40 @@ class DBManager:
         history = cursor.fetchall()
         conn.close()
         return history
+
+
+    def get_all_users(self):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT imie, nazwisko, pesel, nr_konta, saldo, is_active FROM users WHERE is_admin=0")
+        users = cursor.fetchall()
+        conn.close()
+        return users
+
+    def edit_user(self, nr_konta, imie, nazwisko, pesel):
+        with self.lock:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute("UPDATE users SET imie=?, nazwisko=?, pesel=? WHERE nr_konta=?", (imie, nazwisko, pesel, nr_konta))
+                rowcount = cursor.rowcount 
+                conn.commit()
+                if rowcount > 0:
+                    return True, "Dane klienta zostały zaktualizowane."
+                return False, "Nie znaleziono klienta o takim numerze konta."
+            except sqlite3.IntegrityError:
+                return False, "Błąd: Ten PESEL jest już przypisany do kogoś innego."
+            finally:
+                conn.close()
+
+    def deactivate_user(self, nr_konta):
+        with self.lock:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET is_active=0 WHERE nr_konta=?", (nr_konta,))
+            rowcount = cursor.rowcount
+            conn.commit()
+            conn.close()
+            if rowcount > 0:
+                return True, "Konto zostało pomyślnie zablokowane (usunięte)."
+            return False, "Nie znaleziono konta."

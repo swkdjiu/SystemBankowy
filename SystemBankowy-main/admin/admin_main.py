@@ -14,7 +14,7 @@ def main():
     try:
         client.connect((HOST, PORT))
     except:
-        print("Brak połączenia z serwerem.")
+        print("Brak połączenia z serwerem. Uruchom najpierw serwer!")
         return
 
     print("=== TERMINAL BANKIERA (TB) ===")
@@ -23,24 +23,28 @@ def main():
 
     auth = send_req(client, {"action": "login", "login": login, "haslo": haslo})
     if auth["status"] != "ok" or not auth.get("is_admin"):
-        print("Brak uprawnień lub zły login.")
+        print("Brak uprawnień administratora lub zły login.")
         client.close()
         return
 
-    print("[+] Zalogowano jako Administrator.")
+    print("[+] Zalogowano jako Administrator systemu.")
 
     while True:
-        print("\n1. Zarejestruj nowego klienta | 0. Wyjście")
-        opcja = input("Wybierz: ")
+        print("\n=== MENU BANKIERA ===")
+        print("1. Zarejestruj nowego klienta")
+        print("2. Przeglądaj wszystkich klientów")
+        print("3. Edytuj dane klienta")
+        print("4. Zablokuj (usuń) konto klienta")
+        print("0. Wyloguj i wyjdź")
+        opcja = input("Wybierz opcję: ")
 
-        if opcja == '1':
+        if opcja == '1': 
             imie = input("Imię: ")
             nazw = input("Nazwisko: ")
             pesel = input("PESEL: ")
             log = input("Nowy login: ")
             has = input("Nowe hasło: ")
-            # Generujemy losowy 4-cyfrowy numer konta
-            nr = str(random.randint(1000, 9999)) 
+            nr = str(random.randint(1000, 9999)) # Generowanie numeru konta
             
             resp = send_req(client, {
                 "action": "admin_add_user",
@@ -49,8 +53,41 @@ def main():
             })
             print(f"--> {resp['message']} Wygenerowany nr konta: {nr}")
 
-        elif opcja == '0':
+        elif opcja == '2': 
+            resp = send_req(client, {"action": "admin_get_users"})
+            klienci = resp.get("users", [])
+            print("\n--- LISTA KLIENTÓW ---")
+            for k in klienci:
+                status = "Aktywny" if k[5] == 1 else "Zablokowany"
+                print(f"Konto: {k[3]} | {k[0]} {k[1]} | PESEL: {k[2]} | Saldo: {k[4]} PLN | Status: {status}")
+            print("----------------------")
+
+        elif opcja == '3': 
+            nr = input("Podaj numer konta klienta do edycji: ")
+            imie = input("Nowe imię: ")
+            nazw = input("Nowe nazwisko: ")
+            pesel = input("Nowy PESEL: ")
+            
+            resp = send_req(client, {
+                "action": "admin_edit_user",
+                "nr_konta": nr, "imie": imie, "nazwisko": nazw, "pesel": pesel
+            })
+            print(f"--> {resp['message']}")
+
+        elif opcja == '4': 
+            nr = input("Podaj numer konta do zablokowania: ")
+            pewnosc = input("Czy na pewno chcesz zablokować to konto? (t/n): ")
+            if pewnosc.lower() == 't':
+                resp = send_req(client, {"action": "admin_block_user", "nr_konta": nr})
+                print(f"--> {resp['message']}")
+            else:
+                print("Anulowano.")
+
+        elif opcja == '0': 
+            print("Wylogowywanie...")
             break
+        else:
+            print("Niepoprawna opcja.")
 
     client.close()
 
