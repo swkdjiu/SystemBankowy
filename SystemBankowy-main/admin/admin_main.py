@@ -35,6 +35,7 @@ def main():
         print("2. Przeglądaj wszystkich klientów")
         print("3. Edytuj dane klienta")
         print("4. Zablokuj (usuń) konto klienta")
+        print("5. Razblokuj konto klienta.")
         print("0. Wyloguj i wyjdź")
         opcja = input("Wybierz opcję: ")
 
@@ -82,6 +83,11 @@ def main():
                 print(f"--> {resp['message']}")
             else:
                 print("Anulowano.")
+
+        elif opcja == '5': 
+            nr = input("Podaj numer konta do odblokowania: ")
+            resp = send_req(client, {"action": "admin_unblock_user", "nr_konta": nr})
+            print(f"--> {resp['message']}")
 
         elif opcja == '0': 
             print("Wylogowywanie...")

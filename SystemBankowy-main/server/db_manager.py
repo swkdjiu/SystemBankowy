@@ -179,3 +179,15 @@ class DBManager:
             if rowcount > 0:
                 return True, "Konto zostało pomyślnie zablokowane (usunięte)."
             return False, "Nie znaleziono konta."
+        
+    def reactivate_user(self, nr_konta):
+        with self.lock:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET is_active=1 WHERE nr_konta=?", (nr_konta,))
+            rowcount = cursor.rowcount
+            conn.commit()
+            conn.close()
+            if rowcount > 0:
+                return True, "Konto zostało pomyślnie odblokowane."
+            return False, "Nie znaleziono takiego konta."

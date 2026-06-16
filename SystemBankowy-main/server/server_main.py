@@ -72,6 +72,10 @@ def client_thread(conn, addr):
             elif action == "admin_block_user" and is_admin:
                 success, msg = db.deactivate_user(request["nr_konta"])
                 response = {"status": "ok" if success else "error", "message": msg}
+            
+            elif action == "admin_unblock_user" and is_admin:
+                success, msg = db.reactivate_user(request["nr_konta"])
+                response = {"status": "ok" if success else "error", "message": msg}
 
             
             conn.sendall(json.dumps(response).encode('utf-8'))

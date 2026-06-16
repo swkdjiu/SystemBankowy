@@ -11,7 +11,7 @@ def bot_client(nazwa, login, haslo, operacje):
     
     # Logowanie bota
     sock.sendall(json.dumps({"action": "login", "login": login, "haslo": haslo}).encode('utf-8'))
-    sock.recv(1024) # Pomijamy odczyt odp z logowania dla uproszczenia kodu
+    sock.recv(1024) 
     
     for op in operacje:
         # Usypiamy watek na ułamek sekundy by udawać prawdziwego człowieka
@@ -23,7 +23,7 @@ def bot_client(nazwa, login, haslo, operacje):
     sock.close()
 
 def uruchom_testy():
-    print("=== START TESTU AUTOMATYCZNEGO (3 KLIENTÓW JEDNOCZEŚNIE) ===")
+    print("START TESTU")
     # Wszyscy logują się na konto Jana, żeby sprawdzić czy Mutex w bazie zadziała
     # i czy kasa nie zostanie naliczona podwójnie
     
@@ -31,14 +31,14 @@ def uruchom_testy():
     zadania_2 = [{"action": "deposit", "kwota": 200}, {"action": "transfer", "do_konta": "2222", "kwota": 50}]
     zadania_3 = [{"action": "deposit", "kwota": 300}, {"action": "withdraw", "kwota": 100}]
 
-    t1 = threading.Thread(target=bot_client, args=("Bot-A", "jan", "jan123", zadania_1))
-    t2 = threading.Thread(target=bot_client, args=("Bot-B", "jan", "jan123", zadania_2))
-    t3 = threading.Thread(target=bot_client, args=("Bot-C", "jan", "jan123", zadania_3))
+    t1 = threading.Thread(target=bot_client, args=("Bot-A", "anna", "anna123", zadania_1))
+    t2 = threading.Thread(target=bot_client, args=("Bot-B", "anna", "anna123", zadania_2))
+    t3 = threading.Thread(target=bot_client, args=("Bot-C", "anna", "anna123", zadania_3))
 
     t1.start(); t2.start(); t3.start()
     t1.join(); t2.join(); t3.join()
     
-    print("=== KONIEC TESTU. Sprawdź w historii klienta czy saldo się zgadza. ===")
+    print("KONIEC TESTU.")
 
 if __name__ == "__main__":
     uruchom_testy()
